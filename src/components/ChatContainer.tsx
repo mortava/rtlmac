@@ -87,10 +87,11 @@ export function ChatContainer() {
     }
   };
 
-  const handleSaveData = (messageContent: string, data: any) => {
+  const handleSaveData = (messageContent: string, data: any, apiType?: string) => {
     saveSearch({
       name: messageContent.slice(0, 50),
       query: messageContent,
+      apiType: (apiType as any) || 'general',
       results: data,
     });
   };
