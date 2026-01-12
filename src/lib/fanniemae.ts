@@ -1,5 +1,7 @@
 // Fannie Mae API Integration Layer - Complete Implementation
-// Supports all Fannie Mae Developer Portal APIs with GET and POST capabilities
+// Supports Fannie Mae Developer Portal APIs AND The Exchange Public APIs
+// The Exchange uses AWS Cognito authentication (username/password)
+// Developer Portal uses OAuth2 client credentials
 
 import type {
   APICategory,
@@ -40,12 +42,24 @@ import type {
 // ============================================
 
 const API_BASE_URL = process.env.FANNIEMAE_API_BASE || 'https://api.fanniemae.com';
-const EXCHANGE_API_URL = 'https://api.theexchange.fanniemae.com';
+const EXCHANGE_API_URL = process.env.EXCHANGE_API_URL || 'https://api.theexchange.fanniemae.com';
+
+// AWS Cognito settings for The Exchange (public APIs)
+const COGNITO_REGION = process.env.COGNITO_REGION || 'us-east-1';
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
 
 interface TokenResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
+}
+
+interface CognitoTokenResponse {
+  IdToken: string;
+  AccessToken: string;
+  RefreshToken: string;
+  ExpiresIn: number;
 }
 
 interface CachedToken {
@@ -54,11 +68,13 @@ interface CachedToken {
 }
 
 let cachedToken: CachedToken | null = null;
+let cachedExchangeToken: CachedToken | null = null;
 
 // ============================================
 // AUTHENTICATION
 // ============================================
 
+// Developer Portal OAuth2 (client credentials) - for Business Partner APIs
 export async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 60000) {
     return cachedToken.token;
@@ -96,6 +112,72 @@ export async function getAccessToken(): Promise<string> {
     console.error('Auth error:', error);
     throw new Error('Failed to authenticate with Fannie Mae API');
   }
+}
+
+// The Exchange AWS Cognito Authentication (username/password) - for Public APIs
+export async function getExchangeToken(): Promise<string> {
+  if (cachedExchangeToken && Date.now() < cachedExchangeToken.expiresAt - 60000) {
+    return cachedExchangeToken.token;
+  }
+
+  const username = process.env.EXCHANGE_USERNAME;
+  const password = process.env.EXCHANGE_PASSWORD;
+  const cognitoClientId = process.env.EXCHANGE_COGNITO_CLIENT_ID;
+
+  if (!username || !password || !cognitoClientId) {
+    console.log('[EXCHANGE AUTH] Missing credentials - using mock data');
+    throw new Error('Exchange credentials not configured');
+  }
+
+  // AWS Cognito InitiateAuth endpoint
+  const cognitoUrl = `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`;
+
+  try {
+    const response = await fetch(cognitoUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+      },
+      body: JSON.stringify({
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: cognitoClientId,
+        AuthParameters: {
+          USERNAME: username,
+          PASSWORD: password,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[EXCHANGE AUTH FAILED]', response.status, errorText);
+      throw new Error(`Cognito auth failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const authResult = data.AuthenticationResult;
+
+    cachedExchangeToken = {
+      token: authResult.AccessToken,
+      expiresAt: Date.now() + authResult.ExpiresIn * 1000,
+    };
+
+    console.log('[EXCHANGE AUTH SUCCESS] Token obtained');
+    return authResult.AccessToken;
+  } catch (error) {
+    console.error('[EXCHANGE AUTH ERROR]', error);
+    throw new Error('Failed to authenticate with The Exchange');
+  }
+}
+
+// Check if Exchange credentials are configured
+export function hasExchangeCredentials(): boolean {
+  return !!(
+    process.env.EXCHANGE_USERNAME &&
+    process.env.EXCHANGE_PASSWORD &&
+    process.env.EXCHANGE_COGNITO_CLIENT_ID
+  );
 }
 
 // ============================================
@@ -151,6 +233,40 @@ async function apiPost<T, R>(endpoint: string, data: T, requiresAuth = true): Pr
     throw new Error(`API POST failed: ${response.status} - ${errorText}`);
   }
   console.log(`[API POST SUCCESS] ${endpoint}`);
+  return response.json();
+}
+
+// Exchange API handler (uses Cognito auth)
+async function exchangeApiGet<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+  const url = new URL(`${EXCHANGE_API_URL}${endpoint}`);
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) url.searchParams.append(key, value);
+    });
+  }
+
+  const headers: HeadersInit = { Accept: 'application/json' };
+
+  // Try to authenticate with Exchange if credentials are available
+  if (hasExchangeCredentials()) {
+    try {
+      const token = await getExchangeToken();
+      headers['Authorization'] = `Bearer ${token}`;
+    } catch (error) {
+      console.log('[EXCHANGE] Auth failed, proceeding without token');
+    }
+  }
+
+  console.log(`[EXCHANGE API GET] ${url.toString()}`);
+  const response = await fetch(url.toString(), { headers });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[EXCHANGE API GET FAILED] ${response.status}: ${errorText}`);
+    throw new Error(`Exchange API GET failed: ${response.status} - ${errorText}`);
+  }
+
+  console.log(`[EXCHANGE API GET SUCCESS] ${url.toString()}`);
   return response.json();
 }
 
@@ -363,7 +479,8 @@ export async function getMasterServicingPosition(loanNumber: string): Promise<an
 }
 
 // ============================================
-// PUBLIC APIs (THE EXCHANGE)
+// PUBLIC APIs (THE EXCHANGE) - Uses AWS Cognito Auth
+// Register free at: https://theexchange.fanniemae.com
 // ============================================
 
 // GET: Loan Limits
@@ -373,16 +490,14 @@ export async function getLoanLimits(request: LoanLimitsRequest): Promise<LoanLim
     if (request.county) params.county = request.county;
     if (request.year) params.year = request.year.toString();
 
-    return await apiGet<LoanLimitsResponse>(
-      `${EXCHANGE_API_URL}/v1/loan-limits`,
-      params
-    );
+    return await exchangeApiGet<LoanLimitsResponse>('/v1/loan-limits', params);
   } catch (error) {
+    console.log('[LOAN LIMITS] Using mock data:', error);
     return getMockLoanLimits(request);
   }
 }
 
-// GET: Housing Pulse
+// GET: Housing Pulse (NHS - National Housing Survey)
 export async function getHousingPulse(request: HousingPulseRequest): Promise<HousingPulseResponse> {
   try {
     const params: Record<string, string> = {};
@@ -392,11 +507,9 @@ export async function getHousingPulse(request: HousingPulseRequest): Promise<Hou
     if (request.startDate) params.startDate = request.startDate;
     if (request.endDate) params.endDate = request.endDate;
 
-    return await apiGet<HousingPulseResponse>(
-      `${EXCHANGE_API_URL}/v1/housing-pulse`,
-      params
-    );
+    return await exchangeApiGet<HousingPulseResponse>('/v1/housing-pulse', params);
   } catch (error) {
+    console.log('[HOUSING PULSE] Using mock data:', error);
     return getMockHousingPulse(request);
   }
 }
@@ -408,11 +521,9 @@ export async function getManufacturedHousing(request: ManufacturedHousingRequest
     if (request.state) params.state = request.state;
     if (request.county) params.county = request.county;
 
-    return await apiGet<ManufacturedHousingResponse>(
-      `${EXCHANGE_API_URL}/v1/manufactured-housing`,
-      params
-    );
+    return await exchangeApiGet<ManufacturedHousingResponse>('/v1/manufactured-housing', params);
   } catch (error) {
+    console.log('[MANUFACTURED HOUSING] Using mock data:', error);
     return getMockManufacturedHousing(request);
   }
 }
@@ -426,16 +537,14 @@ export async function getOpportunityZones(request: OpportunityZonesRequest): Pro
     if (request.censusTract) params.censusTract = request.censusTract;
     if (request.zipCode) params.zipCode = request.zipCode;
 
-    return await apiGet<OpportunityZonesResponse>(
-      `${EXCHANGE_API_URL}/v1/opportunity-zones`,
-      params
-    );
+    return await exchangeApiGet<OpportunityZonesResponse>('/v1/opportunity-zones', params);
   } catch (error) {
+    console.log('[OPPORTUNITY ZONES] Using mock data:', error);
     return getMockOpportunityZones(request);
   }
 }
 
-// GET: Investor Tools Data
+// GET: Investor Tools Data (CAS, CIRT, MBS Data)
 export async function getInvestorData(request: InvestorDataRequest): Promise<InvestorDataResponse> {
   try {
     const params: Record<string, string> = { dataType: request.dataType };
@@ -445,11 +554,9 @@ export async function getInvestorData(request: InvestorDataRequest): Promise<Inv
     if (request.startDate) params.startDate = request.startDate;
     if (request.endDate) params.endDate = request.endDate;
 
-    return await apiGet<InvestorDataResponse>(
-      `${EXCHANGE_API_URL}/v1/investor-data`,
-      params
-    );
+    return await exchangeApiGet<InvestorDataResponse>('/v1/investor-data', params);
   } catch (error) {
+    console.log('[INVESTOR DATA] Using mock data:', error);
     return getMockInvestorData(request);
   }
 }
