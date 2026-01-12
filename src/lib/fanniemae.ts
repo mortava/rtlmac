@@ -29,6 +29,10 @@ import type {
   InvestorDataResponse,
   SRPPricingRequest,
   SRPPricingResponse,
+  ConstructionSpendingRequest,
+  ConstructionSpendingResponse,
+  ConstructionSpendingMultipleRequest,
+  ConstructionSpendingMultipleResponse,
 } from '@/types';
 
 // ============================================
@@ -443,6 +447,67 @@ export async function getInvestorData(request: InvestorDataRequest): Promise<Inv
 }
 
 // ============================================
+// CONSTRUCTION SPENDING API
+// ============================================
+
+// GET: Construction Spending by Section
+export async function getConstructionSpendingBySection(section: string): Promise<ConstructionSpendingResponse> {
+  try {
+    return await apiGet<ConstructionSpendingResponse>(
+      `${API_BASE_URL}/v1/construction-spending/section`,
+      { section }
+    );
+  } catch (error) {
+    return getMockConstructionSpending(section);
+  }
+}
+
+// GET: Construction Spending by Section and Sector
+export async function getConstructionSpendingBySector(
+  section: string,
+  sector: string
+): Promise<ConstructionSpendingResponse> {
+  try {
+    return await apiGet<ConstructionSpendingResponse>(
+      `${API_BASE_URL}/v1/construction-spending/sectionandsector`,
+      { section, sector }
+    );
+  } catch (error) {
+    return getMockConstructionSpending(section, sector);
+  }
+}
+
+// GET: Construction Spending by Section, Sector, and Subsector
+export async function getConstructionSpendingBySubsector(
+  section: string,
+  sector: string,
+  subsector: string
+): Promise<ConstructionSpendingResponse> {
+  try {
+    return await apiGet<ConstructionSpendingResponse>(
+      `${API_BASE_URL}/v1/construction-spending/sectionsectorandsubsector`,
+      { section, sector, subsector }
+    );
+  } catch (error) {
+    return getMockConstructionSpending(section, sector, subsector);
+  }
+}
+
+// POST: Construction Spending Multiple Paths
+export async function getConstructionSpendingMultiple(
+  request: ConstructionSpendingMultipleRequest
+): Promise<ConstructionSpendingMultipleResponse> {
+  try {
+    return await apiPost<ConstructionSpendingMultipleRequest, ConstructionSpendingMultipleResponse>(
+      `${API_BASE_URL}/v1/construction-spending/multiple`,
+      request
+    );
+  } catch (error) {
+    return getMockConstructionSpendingMultiple(request);
+  }
+}
+
+// ============================================
 // QUERY PARSER - Enhanced
 // ============================================
 
@@ -524,6 +589,11 @@ export function parseQuery(query: string): { type: APICategory; params: Record<s
     return { type: 'investor_tools', params: extractInvestorParams(query) };
   }
 
+  // Construction Spending
+  if (q.includes('construction') || q.includes('spending') || q.includes('building') && (q.includes('data') || q.includes('value') || q.includes('total'))) {
+    return { type: 'construction_spending', params: extractConstructionParams(query) };
+  }
+
   return { type: 'general', params: {} };
 }
 
@@ -593,6 +663,38 @@ function extractInvestorParams(query: string): Record<string, any> {
     poolNumber: poolMatch?.[1] || '',
     cusip: cusipMatch?.[1] || '',
   };
+}
+
+function extractConstructionParams(query: string): Record<string, any> {
+  const q = query.toLowerCase();
+
+  // Determine section
+  let section = 'Total';
+  if (q.includes('private')) section = 'Private';
+  else if (q.includes('public')) section = 'Public';
+
+  // Determine sector
+  let sector = '';
+  if (q.includes('residential')) sector = 'Residential';
+  else if (q.includes('nonresidential') || q.includes('non-residential') || q.includes('commercial')) sector = 'Nonresidential';
+
+  // Determine subsector
+  let subsector = '';
+  const subsectors = [
+    'lodging', 'office', 'commercial', 'health care', 'healthcare',
+    'educational', 'religious', 'public safety', 'amusement', 'recreation',
+    'transportation', 'communication', 'power', 'highway', 'street',
+    'sewage', 'waste', 'water supply', 'conservation', 'manufacturing'
+  ];
+  for (const sub of subsectors) {
+    if (q.includes(sub)) {
+      subsector = sub.charAt(0).toUpperCase() + sub.slice(1);
+      if (sub === 'healthcare') subsector = 'Health care';
+      break;
+    }
+  }
+
+  return { section, sector, subsector };
 }
 
 // ============================================
@@ -964,6 +1066,37 @@ function getMockInvestorData(request: InvestorDataRequest): InvestorDataResponse
   };
 }
 
+function getMockConstructionSpending(
+  section?: string,
+  sector?: string,
+  subsector?: string
+): ConstructionSpendingResponse {
+  const months = ['Jan 2024', 'Feb 2024', 'Mar 2024', 'Apr 2024', 'May 2024', 'Jun 2024'];
+  const sectionName = subsector || sector || section || 'Total';
+
+  const constructionSpending = months.map((month, index) => ({
+    'construction-spending-value': 1800000 + Math.floor(Math.random() * 200000) + (index * 15000),
+    'month-and-value-type': `${month} (Millions of Dollars)`,
+    'month-label-type': month,
+    'data-section-name': sectionName,
+  }));
+
+  return { constructionSpending };
+}
+
+function getMockConstructionSpendingMultiple(
+  request: ConstructionSpendingMultipleRequest
+): ConstructionSpendingMultipleResponse {
+  const postResponseItems = request.queryItems.map((item, index) => ({
+    value: 150000 + Math.floor(Math.random() * 50000) + (index * 10000),
+    path: [item.section, item.sector, item.subsector].filter(Boolean).join('/'),
+    spendingValueType: 'Millions of Dollars',
+    monthYear: 'Jun 2024',
+  }));
+
+  return { postResponseItems };
+}
+
 // ============================================
 // API CATALOG EXPORT
 // ============================================
@@ -997,4 +1130,10 @@ export const API_CATALOG = {
   getManufacturedHousing: { method: 'GET', description: 'Get Manufactured Housing Stats', handler: getManufacturedHousing },
   getOpportunityZones: { method: 'GET', description: 'Search Opportunity Zones', handler: getOpportunityZones },
   getInvestorData: { method: 'GET', description: 'Get Investor/Security Data', handler: getInvestorData },
+
+  // Construction Spending
+  getConstructionSpendingBySection: { method: 'GET', description: 'Get Construction Spending by Section', handler: getConstructionSpendingBySection },
+  getConstructionSpendingBySector: { method: 'GET', description: 'Get Construction Spending by Section & Sector', handler: getConstructionSpendingBySector },
+  getConstructionSpendingBySubsector: { method: 'GET', description: 'Get Construction Spending by Subsector', handler: getConstructionSpendingBySubsector },
+  getConstructionSpendingMultiple: { method: 'POST', description: 'Get Multiple Construction Spending Paths', handler: getConstructionSpendingMultiple },
 };

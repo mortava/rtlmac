@@ -90,6 +90,7 @@ export type APICategory =
   | 'manufactured_housing'
   | 'opportunity_zones'
   | 'investor_tools'
+  | 'construction_spending'
   // General
   | 'general';
 
@@ -834,6 +835,64 @@ export interface InvestorRecord {
   wac: number;
   wam: number;
   loanCount: number;
+}
+
+// ============================================
+// CONSTRUCTION SPENDING API
+// ============================================
+
+export type ConstructionSection = 'Total' | 'Private' | 'Public';
+export type ConstructionSector = 'Residential' | 'Nonresidential';
+export type ConstructionSubsector =
+  | 'Lodging'
+  | 'Office'
+  | 'Commercial'
+  | 'Health care'
+  | 'Educational'
+  | 'Religious'
+  | 'Public safety'
+  | 'Amusement and recreation'
+  | 'Transportation'
+  | 'Communication'
+  | 'Power'
+  | 'Highway and street'
+  | 'Sewage and waste disposal'
+  | 'Water supply'
+  | 'Conservation and development'
+  | 'Manufacturing';
+
+export interface ConstructionSpendingRequest {
+  section: ConstructionSection;
+  sector?: ConstructionSector;
+  subsector?: ConstructionSubsector;
+}
+
+export interface ConstructionSpendingMultipleRequest {
+  queryItems: Array<{
+    section: string;
+    sector?: string;
+    subsector?: string;
+  }>;
+}
+
+export interface ConstructionSpendingDatum {
+  'construction-spending-value': number;
+  'month-and-value-type': string;
+  'month-label-type': string;
+  'data-section-name': string;
+}
+
+export interface ConstructionSpendingResponse {
+  constructionSpending: ConstructionSpendingDatum[];
+}
+
+export interface ConstructionSpendingMultipleResponse {
+  postResponseItems: Array<{
+    value: number;
+    path: string;
+    spendingValueType: string;
+    monthYear: string;
+  }>;
 }
 
 // ============================================

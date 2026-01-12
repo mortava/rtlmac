@@ -17,6 +17,9 @@ import {
   getOpportunityZones,
   getInvestorData,
   getBuyUpBuyDown,
+  getConstructionSpendingBySection,
+  getConstructionSpendingBySector,
+  getConstructionSpendingBySubsector,
   API_CATALOG,
 } from '@/lib/fanniemae';
 
@@ -483,6 +486,51 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      // ============================================
+      // CONSTRUCTION SPENDING API
+      // ============================================
+
+      case 'construction_spending': {
+        const section = params.section || 'Total';
+        const sector = params.sector;
+        const subsector = params.subsector;
+
+        let result;
+        if (subsector && sector) {
+          result = await getConstructionSpendingBySubsector(section, sector, subsector);
+        } else if (sector) {
+          result = await getConstructionSpendingBySector(section, sector);
+        } else {
+          result = await getConstructionSpendingBySection(section);
+        }
+        data = result;
+
+        responseContent = `## Construction Spending Data\n`;
+        responseContent += `**Section:** ${section}`;
+        if (sector) responseContent += ` | **Sector:** ${sector}`;
+        if (subsector) responseContent += ` | **Subsector:** ${subsector}`;
+        responseContent += `\n\n`;
+
+        responseContent += `### Monthly Estimates (Millions of Dollars)\n\n`;
+        responseContent += `| Month | Spending Value | Category |\n|---|---|---|\n`;
+
+        if (data.constructionSpending && data.constructionSpending.length > 0) {
+          data.constructionSpending.forEach((item: any) => {
+            const value = item['construction-spending-value'];
+            const month = item['month-label-type'] || item['month-and-value-type'];
+            const category = item['data-section-name'];
+            responseContent += `| ${month} | $${value.toLocaleString()} | ${category} |\n`;
+          });
+        }
+
+        responseContent += `\n### Available Filters\n`;
+        responseContent += `- **Sections:** Total, Private, Public\n`;
+        responseContent += `- **Sectors:** Residential, Nonresidential\n`;
+        responseContent += `- **Subsectors:** Lodging, Office, Commercial, Health care, Educational, Religious, Public safety, Amusement and recreation, Transportation, Communication, Power, Highway and street, Sewage and waste disposal, Water supply, Conservation and development, Manufacturing\n\n`;
+        responseContent += `*Example: "Show private residential construction spending" or "Construction spending for office buildings"*`;
+        break;
+      }
+
       default: {
         // Build comprehensive help response with all available APIs
         responseContent = `# Welcome to RTLMAC - Real-Time Lending Machine AI Companion\n\n`;
@@ -494,7 +542,8 @@ export async function POST(request: NextRequest) {
         responseContent += `| **Housing Pulse** | Market metrics & trends | "Housing market data for Texas" |\n`;
         responseContent += `| **Manufactured Housing** | MH community statistics | "Manufactured housing in Florida" |\n`;
         responseContent += `| **Opportunity Zones** | Tax incentive zones | "Opportunity zones in Nevada" |\n`;
-        responseContent += `| **Investor Tools** | MBS/Security data | "Show investor data for pool FN123456" |\n\n`;
+        responseContent += `| **Investor Tools** | MBS/Security data | "Show investor data for pool FN123456" |\n`;
+        responseContent += `| **Construction Spending** | Monthly construction value estimates | "Show construction spending data" |\n\n`;
 
         responseContent += `## 🏠 Originating & Underwriting\n\n`;
         responseContent += `| API | Description | Example |\n|---|---|---|\n`;
