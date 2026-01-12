@@ -116,10 +116,14 @@ async function apiGet<T>(endpoint: string, params?: Record<string, string>, requ
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  console.log(`[API GET] ${url.toString()}`);
   const response = await fetch(url.toString(), { headers });
   if (!response.ok) {
-    throw new Error(`API GET failed: ${response.status}`);
+    const errorText = await response.text();
+    console.error(`[API GET FAILED] ${response.status}: ${errorText}`);
+    throw new Error(`API GET failed: ${response.status} - ${errorText}`);
   }
+  console.log(`[API GET SUCCESS] ${url.toString()}`);
   return response.json();
 }
 
@@ -134,6 +138,7 @@ async function apiPost<T, R>(endpoint: string, data: T, requiresAuth = true): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  console.log(`[API POST] ${endpoint}`);
   const response = await fetch(endpoint, {
     method: 'POST',
     headers,
@@ -141,8 +146,11 @@ async function apiPost<T, R>(endpoint: string, data: T, requiresAuth = true): Pr
   });
 
   if (!response.ok) {
-    throw new Error(`API POST failed: ${response.status}`);
+    const errorText = await response.text();
+    console.error(`[API POST FAILED] ${response.status}: ${errorText}`);
+    throw new Error(`API POST failed: ${response.status} - ${errorText}`);
   }
+  console.log(`[API POST SUCCESS] ${endpoint}`);
   return response.json();
 }
 
@@ -931,6 +939,7 @@ function getMockMasterServicing(loanNumber: string): any {
 }
 
 function getMockLoanLimits(request: LoanLimitsRequest): LoanLimitsResponse {
+  console.log('[MOCK DATA] Using fallback data for Loan Limits');
   const limitsByState: Record<string, { oneUnit: number; twoUnit: number; threeUnit: number; fourUnit: number; highCost: boolean }> = {
     CA: { oneUnit: 1149825, twoUnit: 1472250, threeUnit: 1779525, fourUnit: 2211600, highCost: true },
     NY: { oneUnit: 1149825, twoUnit: 1472250, threeUnit: 1779525, fourUnit: 2211600, highCost: true },
@@ -950,11 +959,12 @@ function getMockLoanLimits(request: LoanLimitsRequest): LoanLimitsResponse {
     highCostArea: data.highCost,
     superConformingArea: data.highCost,
     effectiveDate: '2025-01-01',
-    source: 'Fannie Mae 2025 Conforming Loan Limits',
+    source: '⚠️ DEMO DATA - Fannie Mae 2025 Conforming Loan Limits (API connection pending)',
   };
 }
 
 function getMockHousingPulse(request: HousingPulseRequest): HousingPulseResponse {
+  console.log('[MOCK DATA] Using fallback data for Housing Pulse');
   return {
     region: request.state || request.region || 'National',
     dataDate: new Date().toISOString().split('T')[0],
@@ -976,7 +986,7 @@ function getMockHousingPulse(request: HousingPulseRequest): HousingPulseResponse
       demandLevel: 'HIGH',
       marketTemperature: 'WARM',
     },
-    source: 'Fannie Mae Housing Pulse',
+    source: '⚠️ DEMO DATA - Fannie Mae Housing Pulse (API connection pending)',
   };
 }
 
