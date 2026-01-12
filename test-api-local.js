@@ -1,8 +1,8 @@
 // Run this locally: node test-api-local.js
 // This tests if APIs work from your machine (which may have VPN/network access)
 
-const CLIENT_ID = '58323228-ed49-4861-bade-9b91e4270bb7';
-const CLIENT_SECRET = 'bWpvBJkUs3xiW5XJVaTs11IiutuZ6zcwot92gZAApP9yN7~IpQag6Li_auFNVhNz';
+const CLIENT_ID = '54f26e96-cc2d-4329-8c0f-6cc50009a285';
+const CLIENT_SECRET = '9yRj_BFL5kjJ0HY.OoL2mFEEHiOtLv6S9aMPiMv0BF~KpxC8zCzA1RF4QKxGWRwM';
 const TOKEN_URL = 'https://fmsso-api.fanniemae.com/as/token.oauth2';
 const API_BASE = 'https://api.fanniemae.com';
 
